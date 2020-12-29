@@ -1,5 +1,7 @@
 package com.example.myfirstarfurnitureapp
 
+import android.app.Application
+import android.content.Context
 import android.graphics.Color
 import android.os.Bundle
 import android.os.ProxyFileDescriptorCallback
@@ -18,6 +20,7 @@ import com.google.ar.sceneform.AnchorNode
 import com.google.ar.sceneform.Node
 import com.google.ar.sceneform.Scene
 import com.google.ar.sceneform.collision.Box
+import com.google.ar.sceneform.math.Quaternion
 import com.google.ar.sceneform.math.Vector3
 import com.google.ar.sceneform.rendering.ModelRenderable
 import com.google.ar.sceneform.rendering.ViewRenderable
@@ -28,8 +31,14 @@ import java.util.concurrent.CompletableFuture
 
 class MainActivity : AppCompatActivity() {
 
+    private val _context = this.applicationContext
+    private val DOUBLE_TAP_TOLERANCE_MS = 1000L
     private lateinit var arFragment: ArFragment
     private lateinit var selectedModel: FurnitureImage
+    val viewNodes = mutableListOf<Node>()
+
+    lateinit var photoSaver: PhotoSaver
+
     private val furnitureModel = mutableListOf(
         FurnitureImage(R.drawable.chair, "Chair", R.raw.chair),
         FurnitureImage(R.drawable.oven, "Oven", R.raw.oven),
@@ -44,9 +53,17 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
         arFragment = view_frag as ArFragment
+        photoSaver = PhotoSaver(this)
+
         setUpBottomSheet()
         setUpRecycleView()
         setUpDoubleTapArPlanelistener()
+        setupFab()
+
+
+        currentScene.addOnUpdateListener {
+            rotateViewNodes()
+        }
     }
 
     private fun setUpBottomSheet() {
@@ -66,6 +83,12 @@ class MainActivity : AppCompatActivity() {
         })
     }
 
+    private fun setupFab(){
+        fab.setOnClickListener {
+            photoSaver.takePhoto(arFragment.arSceneView)
+        }
+    }
+
     private fun setUpRecycleView() {
         rvModels.layoutManager = LinearLayoutManager(this, LinearLayoutManager.HORIZONTAL, false)
         rvModels.adapter = FurnitureAdapter(furnitureModel).apply {
@@ -78,10 +101,33 @@ class MainActivity : AppCompatActivity() {
     }
 
     private  fun setUpDoubleTapArPlanelistener(){
+        var firstTapTime = 0L
         arFragment.setOnTapArPlaneListener { hitResult, _, _ ->
 
-            loadModel { modelRenderable, viewRenderable ->
-                addNodeToScene(hitResult.createAnchor(),modelRenderable,viewRenderable)
+            if(firstTapTime ==0L){
+                firstTapTime = System.currentTimeMillis()
+            }
+            else if(System.currentTimeMillis()-firstTapTime<DOUBLE_TAP_TOLERANCE_MS){
+                firstTapTime =0L
+                loadModel { modelRenderable, viewRenderable ->
+                    addNodeToScene(hitResult.createAnchor(),modelRenderable,viewRenderable)
+                }
+            }
+            else{
+                firstTapTime = System.currentTimeMillis()
+            }
+        }
+    }
+
+    private fun rotateViewNodes(){
+        for (node in viewNodes){
+
+            //visible if not null
+            node.renderable?.let {
+                val camPos = currentScene.camera.worldPosition
+                val viewNodePos = node.worldPosition
+                val dir = Vector3.subtract(camPos,viewNodePos)
+                node.worldRotation = Quaternion.lookRotation(dir, Vector3.up())
             }
         }
     }
@@ -106,9 +152,11 @@ class MainActivity : AppCompatActivity() {
             localPosition = Vector3(0f,box.size.y, 0f)
             (viewRenderable.view as Button).setOnClickListener {
                 currentScene.removeChild(anchorNode)
+                viewNodes.remove(this)
             }
         }
 
+        viewNodes.add(viewNode)
         modelNode.setOnTapListener { _, _ ->
 
             if(!modelNode.isTransforming){
@@ -142,5 +190,4 @@ class MainActivity : AppCompatActivity() {
             null
         }
     }
-
 }
