@@ -3,6 +3,7 @@ package com.example.myfirstarfurnitureapp
 import android.app.Activity
 import android.content.ContentValues
 import android.graphics.Bitmap
+import android.media.MediaScannerConnection
 import android.os.Build
 import android.os.Environment
 import android.os.Handler
@@ -15,9 +16,7 @@ import java.io.*
 import java.text.SimpleDateFormat
 import java.util.*
 
-class PhotoSaver(val activity: Activity) {
-
-    val context = MyFirstFurnitureArAppApplication.APPLICATION
+class PhotoSaver(private val activity: Activity) {
 
     private fun generateFilename(): String? {
         val date = SimpleDateFormat("yyyyMMddHHmmss", Locale.getDefault()).format(Date())
@@ -69,9 +68,10 @@ class PhotoSaver(val activity: Activity) {
         }
         try {
             val outputStream = FileOutputStream(filename)
-            saveDataToGallery(bmp,outputStream)
+            saveDataToGallery(bmp, outputStream)
+            MediaScannerConnection.scanFile(activity, arrayOf(filename), null, null)
         } catch (ex: Exception) {
-            Toast.makeText(context, "Failed to save bitmap to gallery.", Toast.LENGTH_LONG).show()
+            Toast.makeText(activity, "Failed to save bitmap to gallery.", Toast.LENGTH_LONG).show()
         }
     }
 
@@ -82,11 +82,15 @@ class PhotoSaver(val activity: Activity) {
         workerThread.start()
 
         PixelCopy.request(arSceneView, bitmap, { res ->
-            if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.P) {
-                val fileName = generateFilename()
-                fileName?.let { saveBitmapToGallery(bitmap, filename = it) }
+            if (res == PixelCopy.SUCCESS) {
+                if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.P) {
+                    val fileName = generateFilename()
+                    fileName?.let { saveBitmapToGallery(bitmap, filename = it) }
+                } else {
+                    saveBitmapToGallery(bitmap)
+                }
                 activity.runOnUiThread {
-
+                    Toast.makeText(activity, "Successfully took photo!", Toast.LENGTH_LONG).show()
                 }
             } else {
                 activity.runOnUiThread {
@@ -99,6 +103,5 @@ class PhotoSaver(val activity: Activity) {
             }
             workerThread.quitSafely()
         }, Handler(workerThread.looper))
-
     }
 }

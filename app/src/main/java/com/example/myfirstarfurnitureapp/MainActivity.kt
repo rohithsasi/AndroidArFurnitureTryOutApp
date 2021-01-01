@@ -1,11 +1,10 @@
 package com.example.myfirstarfurnitureapp
 
-import android.app.Application
-import android.content.Context
 import android.graphics.Color
+import android.media.CamcorderProfile
 import android.os.Bundle
-import android.os.ProxyFileDescriptorCallback
 import android.util.TypedValue
+import android.view.MotionEvent
 import android.view.View
 import android.widget.Button
 import android.widget.Toast
@@ -31,11 +30,12 @@ import java.util.concurrent.CompletableFuture
 
 class MainActivity : AppCompatActivity() {
 
-    private val _context = this.applicationContext
     private val DOUBLE_TAP_TOLERANCE_MS = 1000L
     private lateinit var arFragment: ArFragment
     private lateinit var selectedModel: FurnitureImage
+    private lateinit var videoRecorder: VideoRecorder
     val viewNodes = mutableListOf<Node>()
+    private var isRecording = false
 
     lateinit var photoSaver: PhotoSaver
 
@@ -54,6 +54,11 @@ class MainActivity : AppCompatActivity() {
         setContentView(R.layout.activity_main)
         arFragment = view_frag as ArFragment
         photoSaver = PhotoSaver(this)
+
+        videoRecorder = VideoRecorder(this).apply {
+            sceneView = arFragment.arSceneView
+            setVideoQuality(CamcorderProfile.QUALITY_1080P, resources.configuration.orientation)
+        }
 
         setUpBottomSheet()
         setUpRecycleView()
@@ -83,9 +88,21 @@ class MainActivity : AppCompatActivity() {
         })
     }
 
-    private fun setupFab(){
+    private fun setupFab() {
         fab.setOnClickListener {
             photoSaver.takePhoto(arFragment.arSceneView)
+        }
+
+        fab.setOnLongClickListener {
+            isRecording = videoRecorder.toggleRecordingState()
+            true
+        }
+        fab.setOnTouchListener { view, motionEvent ->
+            if (motionEvent.action == MotionEvent.ACTION_UP && isRecording) {
+                isRecording = videoRecorder.toggleRecordingState()
+                Toast.makeText(this, "Saved video to gallery!", Toast.LENGTH_LONG).show()
+                true
+            } else false
         }
     }
 
@@ -100,33 +117,31 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private  fun setUpDoubleTapArPlanelistener(){
+    private fun setUpDoubleTapArPlanelistener() {
         var firstTapTime = 0L
         arFragment.setOnTapArPlaneListener { hitResult, _, _ ->
 
-            if(firstTapTime ==0L){
+            if (firstTapTime == 0L) {
                 firstTapTime = System.currentTimeMillis()
-            }
-            else if(System.currentTimeMillis()-firstTapTime<DOUBLE_TAP_TOLERANCE_MS){
-                firstTapTime =0L
+            } else if (System.currentTimeMillis() - firstTapTime < DOUBLE_TAP_TOLERANCE_MS) {
+                firstTapTime = 0L
                 loadModel { modelRenderable, viewRenderable ->
-                    addNodeToScene(hitResult.createAnchor(),modelRenderable,viewRenderable)
+                    addNodeToScene(hitResult.createAnchor(), modelRenderable, viewRenderable)
                 }
-            }
-            else{
+            } else {
                 firstTapTime = System.currentTimeMillis()
             }
         }
     }
 
-    private fun rotateViewNodes(){
-        for (node in viewNodes){
+    private fun rotateViewNodes() {
+        for (node in viewNodes) {
 
             //visible if not null
             node.renderable?.let {
                 val camPos = currentScene.camera.worldPosition
                 val viewNodePos = node.worldPosition
-                val dir = Vector3.subtract(camPos,viewNodePos)
+                val dir = Vector3.subtract(camPos, viewNodePos)
                 node.worldRotation = Quaternion.lookRotation(dir, Vector3.up())
             }
         }
@@ -149,7 +164,7 @@ class MainActivity : AppCompatActivity() {
             renderable = null
             setParent(anchorNode)
             val box = modelNode.renderable?.collisionShape as Box
-            localPosition = Vector3(0f,box.size.y, 0f)
+            localPosition = Vector3(0f, box.size.y, 0f)
             (viewRenderable.view as Button).setOnClickListener {
                 currentScene.removeChild(anchorNode)
                 viewNodes.remove(this)
@@ -159,8 +174,8 @@ class MainActivity : AppCompatActivity() {
         viewNodes.add(viewNode)
         modelNode.setOnTapListener { _, _ ->
 
-            if(!modelNode.isTransforming){
-                if(viewNode.renderable == null) {
+            if (!modelNode.isTransforming) {
+                if (viewNode.renderable == null) {
                     viewNode.renderable = viewRenderable
                 } else {
                     viewNode.renderable = null
@@ -170,19 +185,19 @@ class MainActivity : AppCompatActivity() {
 
     }
 
-    private fun loadModel(callback: (ModelRenderable,ViewRenderable) ->Unit){
+    private fun loadModel(callback: (ModelRenderable, ViewRenderable) -> Unit) {
         val modelRenderable = ModelRenderable.builder()
             .setSource(this, selectedModel.modelResId)
             .build()
 
         val viewRenderable = ViewRenderable.builder()
             .setView(this, Button(this).apply {
-                text= "Delete"
+                text = "Delete"
                 setBackgroundColor(Color.RED)
                 setTextColor(Color.WHITE)
             }).build()
 
-        CompletableFuture.allOf(modelRenderable,viewRenderable).thenAccept{
+        CompletableFuture.allOf(modelRenderable, viewRenderable).thenAccept {
             callback(modelRenderable.get(), viewRenderable.get())
 
         }.exceptionally {
